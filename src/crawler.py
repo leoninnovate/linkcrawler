@@ -23,7 +23,6 @@ class Crawler:
         self.currptr    = 0
         self.abort      = False
         self.lock       = threading.Lock()
-        self.totalurls  = 0
 
         self.__push(url)
 
@@ -38,12 +37,15 @@ class Crawler:
         with self.lock:
             if not url in self.repo:
                 self.repo.append(url)
-                self.totalurls = len(self.repo)
 
         if self.maxcount <> -1 and len(self.repo) == self.maxcount:
             self.abort = True
 
         return
+
+    @property
+    def totalurls(self):
+        return len(self.repo)
 
     # Gets      : Nothing
     # Returns   : Url at currptr or None
@@ -67,7 +69,8 @@ class Crawler:
             return "https://" + url[8:].split("/")[0]
             
         return url
-
+        
+    # Check if its a valid url to be crawled for or not
     def __valid_contenttype(self, ctype):
         valid = False
         for validctype in validContentTypes:
@@ -75,6 +78,37 @@ class Crawler:
                 valid = True
                 break
         return valid
+
+    # Given a url and number of retries getHtmlData will return the html data
+    def getHtmlData(self, url):
+        cur_try     = 0
+        nothing     = (None, None)
+        
+        #just basic urls
+        if not url.startswith('http://'):
+            return nothing
+        while True:
+            try:
+                req = urllib2.Request(url)
+                open_req = urllib2.urlopen(req)
+
+                content_type = open_req.headers.get('content-type')
+                if not self.__valid_contenttype(content_type):
+                    print "Discarding %s for content %s"%(url, content_type)
+                    return nothing
+
+                content = open_req.read()
+                return (content_type, content)
+
+            except (urllib2.URLError, urllib2.HTTPError, httplib.InvalidURL), e:
+                cur_try += 1
+                if cur_try >= self.retries:
+                    print('error while fetching: %s ' % (url))
+                    print(e)
+                    return
+            finally:
+                if 'open_req' in locals():
+                    open_req.close()
 
     # Gets: baseurl (The url from where we reach here), current url
     # returns: absolute url. 
@@ -96,39 +130,6 @@ class Crawler:
             final_url = baseurl + currurl
 
         return final_url
-        
-
-    # Given a url and number of retries getHtmlData will return the html data
-    def getHtmlData(self, url):
-        cur_try     = 0
-        nothing     = (None, None)
-        
-        #just basic urls
-        if not url.startswith('http://'):
-            return nothing
-        while True:
-            try:
-                req = urllib2.Request(url)
-                open_req = urllib2.urlopen(req)
-
-                content = open_req.read()
-                content_type = open_req.headers.get('content-type')
-
-                if not self.__valid_contenttype(content_type):
-                    print "Discarding %s for content %s"%(url, content_type)
-                    return nothing
-
-                return (content_type, content)
-
-            except (urllib2.URLError, urllib2.HTTPError, httplib.InvalidURL), e:
-                cur_try += 1
-                if cur_try >= self.retries:
-                    print('error while fetching: %s ' % (url))
-                    print(e)
-                    return
-            finally:
-                if 'open_req' in locals():
-                    open_req.close()
 
     # Extract links from th HTML data. 
     # Also take care not to put links in repo if repo is full
